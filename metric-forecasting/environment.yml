@@ -1,0 +1,15 @@
+
+---
+name: prophet-env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.8
+  - pip
+  - prophet
+  - pip:
+      - pandas==1.2.3
+      - prometheus_api_client==0.4.2
+      - numpy
+      - aiohttp==3.7.4.post0
+      - opni-nats==0.0.0.1
