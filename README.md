@@ -8,6 +8,13 @@ docker push [ACCOUNT_NAME]/opni-metric-forecasting-service
 
 ```
 
+then run
+```
+kubectl apply -f metric_forecasting.yaml
+
+```
+Make sure to update the metric_forecasting.yaml file to point to the correct image path!
+
 
 How to run the development version of opni in your cluster:
 - Clone rancher/opni 
