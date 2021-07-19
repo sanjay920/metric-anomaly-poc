@@ -1,5 +1,14 @@
 # metric-anomaly-detection
 
+To build the metric-anomaly-detection Docker image and then push the image:
+```
+docker build -t opni-metric-forecasting-service ./
+docker tag opni-metric-forecasting-service-service [ACCOUNT_NAME]/opni-metric-forecasting-service
+docker push [ACCOUNT_NAME]/opni-metric-forecasting-service
+
+```
+
+
 How to run the development version of opni in your cluster:
 - Clone rancher/opni 
 - Switch to the branch `nats-metrics-listener`
