@@ -1,5 +1,8 @@
 # metric-anomaly-detection
 
+Prerequisites:
+Kubernetes cluster running with Nats, Prometheus and Grafana (setup Rancher monitoring)
+
 To build the metric-anomaly-detection Docker image and then push the image:
 ```
 docker build -t opni-metric-forecasting-service ./
@@ -11,7 +14,6 @@ docker push [ACCOUNT_NAME]/opni-metric-forecasting-service
 then run
 ```
 kubectl apply -f metric_forecasting.yaml
-
 ```
 Make sure to update the metric_forecasting.yaml file to point to the correct image path!
 
