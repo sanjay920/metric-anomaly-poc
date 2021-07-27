@@ -1,4 +1,4 @@
-# metric-anomaly-detection
+# # metric-anomaly-poc
 
 Prerequisites:
 Kubernetes cluster running with Nats, Prometheus and Grafana (setup Rancher monitoring)
@@ -28,3 +28,5 @@ How to run the development version of opni in your cluster:
     - Above the call to `docker_build_with_restart`: `default_registry('docker.io/your-user-name')`
     - Near the top of the file under the existing call to allow_k8s_contexts: `allow_k8s_contexts('your-context-name')` 
 - Run `tilt up`
+
+
