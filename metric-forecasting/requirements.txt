@@ -1,6 +1,0 @@
-aiohttp==3.7.4.post0
-opni-nats==0.0.0.1
-pandas==1.2.3
-prometheus-api-client==0.4.2
-pystan==2.19.1.1
-prophet
