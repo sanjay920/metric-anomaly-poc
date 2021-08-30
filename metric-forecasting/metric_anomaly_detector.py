@@ -25,8 +25,8 @@ logger.setLevel(LOGGING_LEVEL)
 
 class MetricAnomalyDetector:
 
-    def __init__(self):
-        self.metric_name =   "cluster:node_cpu:sum_rate5m"
+    def __init__(self, metric_name):
+        self.metric_name =   metric_name
         self.metric_xs = []
         self.metric_y = []
         self.pred_history = []
@@ -34,12 +34,12 @@ class MetricAnomalyDetector:
         self.metric_model = MetricModel()
 
     def verify_new_data(self, data):
-        xs_new, y_new = data["metric_payload"][0]["value"]
+        xs_new, y_new = data[0]["value"]
         xs_new = datetime.fromtimestamp(float(xs_new)).strftime("%Y-%m-%d %H:%M:%S")
         y_new = float(y_new)
         # g.set(y_new)
         ## check the prediction for y_new to verify if it's anomaly?
-        json_payload = {"is_anomaly": False, "metric_name":self.metric_name,
+        json_payload = {"time" : xs_new,"is_anomaly": False, "metric_name":self.metric_name,
                              "alert_score" : 0, "y": y_new } 
         if len(self.metric_xs) >= MIN_DATA_SIZE: ## which means there's a prediction for this datapoint
             y_pred, y_pred_low, y_pred_high = self.pred_history[len(self.metric_xs) - MIN_DATA_SIZE]
@@ -66,7 +66,7 @@ class MetricAnomalyDetector:
             self.alert_counter = max(self.alert_counter, 0)
             if self.alert_counter >= 1:
                 logger.fatal(f"Alert at time : {xs_new}")
-            json_payload["y_hat"] = y_pred
+            json_payload["yhat"] = y_pred
             json_payload["yhat_lower"] =  y_pred_low
             json_payload["yhat_upper"] =  y_pred_high
             json_payload["confidence_score"] = 1 ##TODO

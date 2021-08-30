@@ -11,6 +11,7 @@ from opni_nats import NatsWrapper
 from metric_anomaly_detector import MetricAnomalyDetector
 
 PROMETHEUS_ENDPOINT = os.getenv( "PROMETHEUS_ENDPOINT", "http://localhost:9090")
+IS_LOCAL = True if PROMETHEUS_ENDPOINT == "http://localhost:9090" else False
 
 LOGGING_LEVEL = os.getenv("LOGGING_LEVEL", "DEBUG")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(message)s")
@@ -22,29 +23,39 @@ LOOP_TIME_SECOND = float(60.0) # unit: second, type: float
 
 
 async def update_metrics(inference_queue):
-    nw = NatsWrapper()
-    await nw.connect()
+    if not IS_LOCAL:
+        nw = NatsWrapper()
+        await nw.connect()
     ## orderedDict?
 
-    mad= MetricAnomalyDetector()
+    metrics_list = ["cpu_usage", "memory_usage", "disk_usage"] ## TODO: default metrics and their queries should be configured in a file.
+    mad = {}
+    for m in metrics_list:
+        mad[m] = MetricAnomalyDetector(m)
     while True:
         new_data = await inference_queue.get()
-        if len(new_data["metric_payload"]) == 0:
-            continue
-        logger.debug(f"Got new payload {new_data}")
-        json_payload = mad.verify_new_data(new_data)
-        await nw.publish(nats_subject="forecasted_metric_bounds", payload_df=json.dumps(json_payload).encode())
-        mad.fit_model()
+        starttime = time.time()
+        for m in metrics_list:
+            if len(new_data[m]) == 0:
+                continue
+            json_payload = mad[m].verify_new_data(new_data[m])
+            if not IS_LOCAL:
+                await nw.publish(nats_subject="forecasted_metric_bounds", payload_df=json.dumps(json_payload).encode()) ## plan to change the subjact to "forecasted_metrics"
+            mad[m].fit_model()
+        logger.debug(f"anomaly detection time spent : {time.time() - starttime}")
         
 
 async def scrape_prometheus_metrics(inference_queue):
     starttime = time.time()
     while True:
+        thistime = time.time()
         ## TODO: should have a preprocessing service to scrape metrics from prometheus every minute, and fillin missing values if necessarys
-        current_cpu_usage_data = prom.custom_query(query='1 - (avg(irate({__name__=~"node_cpu_seconds_total|windows_cpu_time_total",mode="idle"}[2m])))')
-        inference_queue_payload = {"metric_payload": current_cpu_usage_data}
-        logger.debug(datetime.fromtimestamp(float(current_cpu_usage_data[0]["value"][0])).strftime("%Y-%m-%d %H:%M:%S"))
+        current_cpu_usage_data = prom.custom_query(query='1- (avg(irate(node_cpu_seconds_total{mode="idle"}[5m])))')
+        memory_usage = prom.custom_query(query='100 * (1 - sum(node_memory_MemAvailable_bytes) / sum(node_memory_MemTotal_bytes))')
+        disk_usage = prom.custom_query(query='(sum(node_filesystem_size_bytes{device!~"rootfs|HarddiskVolume.+"})- sum(node_filesystem_free_bytes{device!~"rootfs|HarddiskVolume.+"})) / sum(node_filesystem_size_bytes{device!~"rootfs|HarddiskVolume.+"}) * 100 ')
+        inference_queue_payload = {"cpu_usage": current_cpu_usage_data, "memory_usage" : memory_usage, "disk_usage" : disk_usage}
         await inference_queue.put(inference_queue_payload)
+        logger.debug(f"query time spent: {time.time() - thistime}")
         await asyncio.sleep(LOOP_TIME_SECOND - ((time.time() - starttime) % LOOP_TIME_SECOND))
 
     
