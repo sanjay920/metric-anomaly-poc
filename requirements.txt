@@ -3,3 +3,4 @@ prometheus_api_client==0.4.2
 numpy
 statsmodels==0.12.2
 opni-nats==0.0.0.2
+elasticsearch[async]==7.12.0

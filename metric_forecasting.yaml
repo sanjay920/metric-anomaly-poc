@@ -21,3 +21,9 @@ spec:
           value: "http://rancher-monitoring-prometheus.cattle-monitoring-system.svc.cluster.local:9090"
         - name: NATS_SERVER_URL
           value: "nats://nats_client:password@nats-client.opni-demo.svc:4222"
+        - name: ES_ENDPOINT
+          value: https://opendistro-es-client-service.opni-demo.svc.cluster.local:9200
+        - name: ES_USERNAME
+          value: admin
+        - name: ES_PASSWORD
+          value: admin

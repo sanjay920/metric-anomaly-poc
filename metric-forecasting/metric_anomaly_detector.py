@@ -34,13 +34,16 @@ class MetricAnomalyDetector:
         self.metric_model = MetricModel()
 
     def verify_new_data(self, data):
-        xs_new, y_new = data[0]["value"]
-        xs_new = datetime.fromtimestamp(float(xs_new)).strftime("%Y-%m-%d %H:%M:%S")
-        y_new = float(y_new)
+        xs_raw, y_raw = data[0]["value"]
+        xs_new = datetime.fromtimestamp(float(xs_raw)).strftime("%Y-%m-%d %H:%M:%S")
+        y_new = float(y_raw)
+        ts = datetime.fromtimestamp(xs_raw) # example format : '2019-03-13T12:02:49'
         # g.set(y_new)
         ## check the prediction for y_new to verify if it's anomaly?
-        json_payload = {"time" : xs_new,"is_anomaly": False, "metric_name":self.metric_name,
-                             "alert_score" : 0, "y": y_new } 
+        json_payload = {"timestamp" : ts,"is_anomaly": False, "metric_name":self.metric_name,
+                             "alert_score" : 0, "y": y_new,
+                        "yhat": y_new, "yhat_lower": y_new, "yhat_upper": y_new, "confidence_score": 0
+                              } 
         if len(self.metric_xs) >= MIN_DATA_SIZE: ## which means there's a prediction for this datapoint
             y_pred, y_pred_low, y_pred_high = self.pred_history[len(self.metric_xs) - MIN_DATA_SIZE]
             is_anomaly = True if ( y_new < y_pred_low or y_new > y_pred_high) else False

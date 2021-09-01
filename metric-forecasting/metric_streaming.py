@@ -9,9 +9,13 @@ import os
 from prometheus_api_client import PrometheusConnect
 from opni_nats import NatsWrapper
 from metric_anomaly_detector import MetricAnomalyDetector
+from elasticsearch import AsyncElasticsearch
+from elasticsearch.exceptions import ConnectionTimeout
+from elasticsearch.helpers import BulkIndexError, async_streaming_bulk
+import uuid
 
 PROMETHEUS_ENDPOINT = os.getenv( "PROMETHEUS_ENDPOINT", "http://localhost:9090")
-IS_LOCAL = True if PROMETHEUS_ENDPOINT == "http://localhost:9090" else False
+# IS_LOCAL = True if PROMETHEUS_ENDPOINT == "http://localhost:9090" else False
 
 LOGGING_LEVEL = os.getenv("LOGGING_LEVEL", "DEBUG")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(message)s")
@@ -21,13 +25,55 @@ logger.setLevel(LOGGING_LEVEL)
 prom = PrometheusConnect(url=PROMETHEUS_ENDPOINT, disable_ssl=True)
 LOOP_TIME_SECOND = float(60.0) # unit: second, type: float
 
+ES_ENDPOINT = os.getenv("ES_ENDPOINT", "https://localhost:9200")
+ES_USERNAME = os.getenv("ES_USERNAME", "admin")
+ES_PASSWORD = os.getenv("ES_PASSWORD", "admin")
+
+ES_RESERVED_KEYWORDS = {
+    "_id",
+    "_index",
+    "_if_seq_no",
+    "_if_primary_term",
+    "_parent",
+    "_percolate",
+    "_retry_on_conflict",
+    "_routing",
+    "_timestamp",
+    "_type",
+    "_version",
+    "_version_type",
+}
+
+es = AsyncElasticsearch(
+    [ES_ENDPOINT],
+    port=9200,
+    http_auth=(ES_USERNAME, ES_PASSWORD),
+    http_compress=True,
+    verify_certs=False,
+    use_ssl=False,
+    timeout=10,
+    max_retries=5,
+    retry_on_timeout=True,
+)
+
+async def doc_generator(d):
+    # for index, document in df.iterrows():
+    #     doc_kv = document[pd.notnull(document)].to_dict().items()
+    yield {
+        "_index": "mymetrics",
+        "_id": uuid.uuid4(),
+        "_source": {
+            k: d[k]
+            for k in d
+            if not (isinstance(d[k], str) and not d[k]) and k not in ES_RESERVED_KEYWORDS
+        },
+    }
 
 async def update_metrics(inference_queue):
-    if not IS_LOCAL:
-        nw = NatsWrapper()
-        await nw.connect()
-    ## orderedDict?
-
+    # if not IS_LOCAL:
+    #     nw = NatsWrapper()
+    #     await nw.connect()
+    # ## orderedDict?
     metrics_list = ["cpu_usage", "memory_usage", "disk_usage"] ## TODO: default metrics and their queries should be configured in a file.
     mad = {}
     for m in metrics_list:
@@ -39,8 +85,20 @@ async def update_metrics(inference_queue):
             if len(new_data[m]) == 0:
                 continue
             json_payload = mad[m].verify_new_data(new_data[m])
-            if not IS_LOCAL:
-                await nw.publish(nats_subject="forecasted_metric_bounds", payload_df=json.dumps(json_payload).encode()) ## plan to change the subjact to "forecasted_metrics"
+            
+            try:
+                async for ok, result in async_streaming_bulk(
+                    es, doc_generator(json_payload)
+                ):
+                    action, result = result.popitem()
+                    if not ok:
+                        logging.error("failed to {} document {}".format())
+            except (BulkIndexError, ConnectionTimeout) as exception:
+                logging.error("Failed to index data")
+                logging.error(exception)
+
+            # if not IS_LOCAL:
+                # await nw.publish(nats_subject="forecasted_metric_bounds", payload_df=json.dumps(json_payload).encode()) ## plan to change the subjact to "forecasted_metrics"
             mad[m].fit_model()
         logger.debug(f"anomaly detection time spent : {time.time() - starttime}")
         
