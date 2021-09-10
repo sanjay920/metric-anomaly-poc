@@ -104,7 +104,7 @@ async def update_metrics(inference_queue):
             logging.error(exception)
 
             
-        logger.debug(f"anomaly detection time spent : {time.time() - starttime}")
+        #logger.debug(f"anomaly detection time spent : {time.time() - starttime}")
         
 
 async def scrape_prometheus_metrics(inference_queue):
@@ -117,7 +117,7 @@ async def scrape_prometheus_metrics(inference_queue):
         disk_usage = prom.custom_query(query='(sum(node_filesystem_size_bytes{device!~"rootfs|HarddiskVolume.+"})- sum(node_filesystem_free_bytes{device!~"rootfs|HarddiskVolume.+"})) / sum(node_filesystem_size_bytes{device!~"rootfs|HarddiskVolume.+"}) * 100 ')
         inference_queue_payload = {"cpu_usage": current_cpu_usage_data, "memory_usage" : memory_usage, "disk_usage" : disk_usage}
         await inference_queue.put(inference_queue_payload)
-        logger.debug(f"query time spent: {time.time() - thistime}")
+        #logger.debug(f"query time spent: {time.time() - thistime}")
         await asyncio.sleep(LOOP_TIME_SECOND - ((time.time() - starttime) % LOOP_TIME_SECOND))
 
     

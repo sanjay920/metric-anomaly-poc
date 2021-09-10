@@ -46,8 +46,9 @@ class MetricAnomalyDetector:
         # g.set(y_new)
         ## check the prediction for y_new to verify if it's anomaly?
         is_anomaly = 0
+        is_alert = 0
         json_payload = {"timestamp" : ts,"is_anomaly": is_anomaly, "metric_name":self.metric_name,
-                             "alert_score" : 0, "y": y_new,
+                             "alert_score" : 0, "is_alert":is_alert, "y": y_new,
                         "yhat": y_new, "yhat_lower": y_new, "yhat_upper": y_new, "confidence_score": 0
                               } 
         if len(self.metric_xs) >= MIN_DATA_SIZE: ## which means there's a prediction for this datapoint
@@ -73,21 +74,23 @@ class MetricAnomalyDetector:
             else:
                 if self.alert_counter > 0:
                     self.alert_counter -= 2
-                    if self.alert_counter <= 0: ## if it gets back to normal, auto-correct the outlier value. TODO: test this.
-                        for i1 in range(-5, 0):
-                            if self.anomaly_history[i1] == 1:
-                                #self.metric_y[i1] = y_new ## replace outlier with y_new.
-                                if self.metric_y[i1] > self.pred_history[i1][2]: ## replace with yhat_upper or yhat_lower
-                                    self.metric_y[i1] = self.pred_history[i1][2]
-                                elif self.metric_y[i1] < self.pred_history[i1][1]:
-                                    self.metric_y[i1] = self.pred_history[i1][1]
+                    # if self.alert_counter <= 0: ## if it gets back to normal, auto-correct the outlier value. TODO: test this.
+                    #     for i1 in range(-5, 0):
+                    #         if self.anomaly_history[i1] == 1:
+                    #             #self.metric_y[i1] = y_new ## replace outlier with y_new.
+                    #             if self.metric_y[i1] > self.pred_history[i1][2]: ## replace with yhat_upper or yhat_lower
+                    #                 self.metric_y[i1] = self.pred_history[i1][2]
+                    #             elif self.metric_y[i1] < self.pred_history[i1][1]:
+                    #                 self.metric_y[i1] = self.pred_history[i1][1]
 
             self.alert_counter = max(self.alert_counter, 0)
             if self.alert_counter >= 5:
+                is_alert = 1
                 logger.fatal(f"Alert for {self.metric_name} at time : {xs_new}")
 
+            json_payload["is_alert"] = is_alert
             json_payload["yhat"] = y_pred
-            json_payload["yhat_lower"] =  y_pred_low
+            json_payload["yhat_lower"] =  max(0, y_pred_low) #y_pred_low
             json_payload["yhat_upper"] =  y_pred_high
             json_payload["confidence_score"] = 1 ##TODO
             json_payload["is_anomaly"] = is_anomaly
@@ -97,7 +100,14 @@ class MetricAnomalyDetector:
         # push_to_gateway('http://localhost:9796', job='batchA', registry=registry)
 
         self.anomaly_history.append(is_anomaly) 
-        y_train = y_new
+        if self.metric_name == "cpu_usage" and is_alert == 0 and is_anomaly == 1:
+            logger.debug("fixed anomaly value.")
+            if y_new < y_pred_low:
+                y_train = y_pred_low
+            else: # y_new > y_pred_high
+                y_train = y_pred_high
+        else:
+            y_train = y_new
         self.metric_xs.append(xs_new)
         self.metric_y.append(y_train)
         self.metric_realy.append(y_new)
@@ -105,13 +115,14 @@ class MetricAnomalyDetector:
         ## TODO: add CPD(change points detection) or compute_vol() to better make desicion of handling anomaly data points for training.
         ## include or exclude or quarantine this new data?
         #y_train =y_new if is_anomaly==0 else np.NaN 
-        if len(self.anomaly_history) >= 30 and self.anomaly_history[-30] == 1:
+        trace_back_time = 15
+        if len(self.anomaly_history) >= trace_back_time and self.anomaly_history[-trace_back_time] == 1 and self.metric_name == "cpu_usage":
             training_y = self.metric_y[self.start_point:]
             if len(training_y) >= 60:
                 cpd = rpt.Pelt(model="rbf").fit(np.array(training_y))
                 change_locations = (cpd.predict(pen=10))[:-1] # remove last one because it's always the end of array so it's meaningless
                 for l in reversed(change_locations):
-                    if abs(l - len(training_y) + 30) <= 5:
+                    if abs(l - len(training_y) + trace_back_time) <= 5:
                         logger.debug(f"reset start_point from {self.metric_xs[self.start_point]} to {self.metric_xs[self.start_point + l]}")
                         self.start_point = self.start_point + l
                         break
