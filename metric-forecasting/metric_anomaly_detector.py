@@ -53,7 +53,10 @@ class MetricAnomalyDetector:
                               } 
         if len(self.metric_xs) >= MIN_DATA_SIZE: ## which means there's a prediction for this datapoint
             y_pred, y_pred_low, y_pred_high = self.pred_history[len(self.metric_xs)]
-            is_anomaly = 1 if ( y_new < y_pred_low or y_new > y_pred_high) else 0
+            if self.metric_name != "disk_usage":
+                is_anomaly = 1 if ( y_new < y_pred_low or y_new > y_pred_high) else 0
+            else:
+                is_anomaly = 1 if y_new >= 80 else 0
 
             ## rule for alerting. 
             '''
@@ -87,14 +90,15 @@ class MetricAnomalyDetector:
             if self.alert_counter >= 5:
                 is_alert = 1
                 logger.fatal(f"Alert for {self.metric_name} at time : {xs_new}")
-
-            json_payload["is_alert"] = is_alert
+ 
             json_payload["yhat"] = y_pred
             json_payload["yhat_lower"] =  max(0, y_pred_low) #y_pred_low
             json_payload["yhat_upper"] =  y_pred_high
             json_payload["confidence_score"] = 1 ##TODO
             json_payload["is_anomaly"] = is_anomaly
+            json_payload["is_alert"] = is_alert
             json_payload["alert_score"] = self.alert_counter
+
         else: ## cornercase for cold start period (first 10 mins)
             self.pred_history.append((y_new, y_new, y_new))
         # push_to_gateway('http://localhost:9796', job='batchA', registry=registry)
@@ -115,10 +119,10 @@ class MetricAnomalyDetector:
         ## TODO: add CPD(change points detection) or compute_vol() to better make desicion of handling anomaly data points for training.
         ## include or exclude or quarantine this new data?
         #y_train =y_new if is_anomaly==0 else np.NaN 
-        trace_back_time = 15
+        trace_back_time = 30
         if len(self.anomaly_history) >= trace_back_time and self.anomaly_history[-trace_back_time] == 1 and self.metric_name == "cpu_usage":
             training_y = self.metric_y[self.start_point:]
-            if len(training_y) >= 60:
+            if len(training_y) >= 2 * trace_back_time:
                 cpd = rpt.Pelt(model="rbf").fit(np.array(training_y))
                 change_locations = (cpd.predict(pen=10))[:-1] # remove last one because it's always the end of array so it's meaningless
                 for l in reversed(change_locations):
