@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: metric-service
-        image: tybalex/opni-metric:dev
+        image: tybalex/opni-metric:dev1
         imagePullPolicy: Always
         env:
         - name: PROMETHEUS_ENDPOINT

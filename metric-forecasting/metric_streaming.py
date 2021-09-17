@@ -70,27 +70,37 @@ async def doc_generator(metrics_payloads):
             },
         }
 
+async def load_history_data(metric_name, mad: MetricAnomalyDetector):
+    query = {"query":{"match" : {"metric_name" : metric_name}}, "sort" : [{"timestamp":{"order": "desc"}}]}
+    try:
+        history_data = await es.search(index="mymetrics", body=query, size=1440)
+        mad.load(reversed(history_data["hits"]["hits"]))
+    except Exception as e:
+        logger.warning("fail to load history metrics data!")
+
+
 async def update_metrics(inference_queue):
     # if not IS_LOCAL:
     #     nw = NatsWrapper()
     #     await nw.connect()
     # ## orderedDict?
     metrics_list = ["cpu_usage", "memory_usage", "disk_usage"] ## TODO: default metrics and their queries should be configured in a file.
-    mad = {}
-    for m in metrics_list:
-        mad[m] = MetricAnomalyDetector(m)
+    mad_dict = {}
+    for metric_name in metrics_list:
+        mad = MetricAnomalyDetector(metric_name)
+        await load_history_data(metric_name, mad)
+        mad_dict[metric_name] = mad
     while True:
         new_data = await inference_queue.get()
         starttime = time.time()
         metrics_payloads = []
-        for m in metrics_list:
-            if len(new_data[m]) == 0:
+        for metric_name in metrics_list:
+            if len(new_data[metric_name]) == 0:
                 continue
-            json_payload = mad[m].verify_new_data(new_data[m])
+            json_payload = mad_dict[metric_name].run(new_data[metric_name])
             metrics_payloads.append(json_payload)
             # if not IS_LOCAL:
                 # await nw.publish(nats_subject="forecasted_metric_bounds", payload_df=json.dumps(json_payload).encode()) ## plan to change the subjact to "forecasted_metrics"
-            mad[m].fit_model()
 
         try:
             async for ok, result in async_streaming_bulk(
@@ -106,13 +116,19 @@ async def update_metrics(inference_queue):
             
         #logger.debug(f"anomaly detection time spent : {time.time() - starttime}")
         
+def convert_time(ts):
+    return datetime.fromtimestamp(float(ts)).strftime("%Y-%m-%d %H:%M:%S")
 
 async def scrape_prometheus_metrics(inference_queue):
     starttime = time.time()
+    wait_time = int(starttime) // 60 * 60 + 60 - starttime
+    await asyncio.sleep(wait_time)
+    starttime = time.time()
+    logger.debug(f"wait time : {wait_time}, current time : {convert_time(starttime)}")
     while True:
         thistime = time.time()
         ## TODO: should have a preprocessing service to scrape metrics from prometheus every minute, and fillin missing values if necessarys
-        current_cpu_usage_data = prom.custom_query(query='100 * (1- (avg(irate(node_cpu_seconds_total{mode="idle"}[5m]))))')
+        current_cpu_usage_data = prom.custom_query(query='100 * (1- (avg(irate(node_cpu_seconds_total{mode="idle"}[2m]))))')
         memory_usage = prom.custom_query(query='100 * (1 - sum(node_memory_MemAvailable_bytes) / sum(node_memory_MemTotal_bytes))')
         disk_usage = prom.custom_query(query='(sum(node_filesystem_size_bytes{device!~"rootfs|HarddiskVolume.+"})- sum(node_filesystem_free_bytes{device!~"rootfs|HarddiskVolume.+"})) / sum(node_filesystem_size_bytes{device!~"rootfs|HarddiskVolume.+"}) * 100 ')
         inference_queue_payload = {"cpu_usage": current_cpu_usage_data, "memory_usage" : memory_usage, "disk_usage" : disk_usage}
